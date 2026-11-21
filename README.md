@@ -1,6 +1,7 @@
 # Smart Campus Network with Cloud-Based Monitoring and Web-Based Control Dashboard
 
 **COMP1682 Final Year Project · University of Greenwich**
+
 **Author:** Kokila Dissanayaka (001565530) · **Supervisor:** Mr. Nalaka Dissanayaka
 
 A resilient campus network built in GNS3, monitored from Microsoft Azure over an encrypted
