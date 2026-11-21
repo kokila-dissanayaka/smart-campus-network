@@ -1,0 +1,37 @@
+{% extends "layout.html" %}
+{% import "_icons.html" as ic %}
+{% block title %}Events · Smart Campus NOC{% endblock %}
+{% block content %}
+<div class="pagehd"><div><h1>Events</h1><p>Every fault, recovery, failover and change detected by campus-worker</p></div>
+  <div class="right" role="group" aria-label="Filter by severity">
+    {% for f, label in [('all','All'), ('bad','High'), ('warn','Warning'), ('ok','Info')] %}
+      <button class="btn flt {{ 'primary' if f == 'all' }}" type="button" data-f="{{ f }}">{{ label }}</button>
+    {% endfor %}</div></div>
+<section class="card">
+  <div class="hd">{{ ic.i('list') }}<h2>Event log</h2><span class="sub">last {{ events|length }}</span></div>
+  <div class="bd">
+    <table>
+      <thead><tr><th>Time</th><th>Severity</th><th>Type</th><th>Device</th><th>Message</th></tr></thead>
+      <tbody>
+      {% for e in events %}
+        {% set t = e.severity|pill %}
+        <tr data-sev="{{ t }}"><td class="mono">{{ e.ts.strftime('%d %b %H:%M:%S') }}</td>
+            <td><span class="pill {{ t }}">{{ e.severity }}</span></td>
+            <td class="mono">{{ e.etype }}</td><td><b>{{ e.device }}</b></td>
+            <td style="min-width:260px">{{ e.message }}</td></tr>
+      {% else %}<tr><td colspan="5" class="empty">No events yet</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<script>
+  document.querySelectorAll('.flt').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.flt').forEach(function (x) { x.classList.toggle('primary', x === b); });
+      document.querySelectorAll('tr[data-sev]').forEach(function (r) {
+        r.hidden = !(b.dataset.f === 'all' || r.dataset.sev === b.dataset.f);
+      });
+    });
+  });
+</script>
+{% endblock %}

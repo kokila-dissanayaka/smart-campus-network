@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% block shellcls %} with-nav{% endblock %}
+
+{% block headerextra %}
+<div class="live" title="Page refreshes automatically"><i class="dot"></i><span>Live · refresh in <b id="cd">20</b>s</span></div>
+{% endblock %}
+
+{% block styles %}
+{% include "_dash_styles.html" %}
+{% block pagestyles %}{% endblock %}
+{% endblock %}
+
+{% block nav %}
+{% set open_fo = failovers | selectattr('ended_at', 'none') | list %}
+{% set alerts = events | selectattr('severity', 'in', ['HIGH', 'WARNING']) | list %}
+<nav class="side" aria-label="Main">
+  <div class="sect">Monitor</div>
+  <a href="{{ url_for('dashboard') }}" class="{{ 'on' if page == 'dashboard' }}">{{ ic.i('network') }} Overview</a>
+  <a href="{{ url_for('devices') }}" class="{{ 'on' if page == 'devices' }}">{{ ic.i('radar') }} Devices
+     <span class="cnt {{ 'bad' if down }}">{{ (down ~ ' down') if down else (up ~ '/' ~ devices|length) }}</span></a>
+  <a href="{{ url_for('internet') }}" class="{{ 'on' if page == 'internet' }}">{{ ic.i('globe') }} Internet &amp; failover
+     {% if open_fo %}<span class="cnt warn">live</span>{% endif %}</a>
+  <a href="{{ url_for('events') }}" class="{{ 'on' if page == 'events' }}">{{ ic.i('list') }} Events</a>
+  <div class="sect">Manage</div>
+  <a href="{{ url_for('backups') }}" class="{{ 'on' if page == 'backups' }}">{{ ic.i('database') }} Backups</a>
+  <a href="{{ url_for('audit') }}" class="{{ 'on' if page == 'audit' }}">{{ ic.i('lock') }} Audit log</a>
+  <div class="foot">Monitor: Azure VM<br>Sites: GNS3 campus via WireGuard</div>
+</nav>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Auto-refresh every 20 s; pauses while a menu is open or a field has focus.
+  var left = 20, cd = document.getElementById('cd'), sending = false;
+  // Once an action is submitted, stop auto-refresh so the reload cannot cancel the request
+  // (backups and interface changes can take 10-20 s on the routers).
+  document.addEventListener('submit', function (e) {
+    if (e.defaultPrevented) return;            // e.g. the first "arm" click of a two-step button
+    sending = true; if (cd) cd.textContent = '–';
+    var b = e.submitter;
+    if (b && !b.closest('dialog')) {
+      b.disabled = true;
+      b.innerHTML = '<span class="spin sm"></span> Working…';
+    }
+  });
+  window.addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
+  setInterval(function () {
+    if (sending) return;
+    var busy = document.querySelector('details.manage[open], dialog[open]') ||
+               (document.activeElement && /SELECT|INPUT/.test(document.activeElement.tagName));
+    if (busy) { cd.textContent = '–'; return; }
+    left -= 1; cd.textContent = left;
+    if (left <= 0) location.reload();
+  }, 1000);
+</script>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+{% import "_icons.html" as ic %}
+{% block title %}Backups · Smart Campus NOC{% endblock %}
+{% block content %}
+<div class="pagehd"><div><h1>Configuration backups</h1><p>Automatic every 24 h, or on demand. Stored on the Azure VM.</p></div>
+  <div class="right">
+  {% for t in backup_targets %}
+    <form method="post" action="{{ url_for('action_backup') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" value="{{ t }}">
+      <input type="hidden" name="back" value="{{ request.path }}">
+      <button class="btn" type="submit">{{ ic.i('save', 15) }} Back up {{ t }}</button>
+    </form>
+  {% endfor %}</div></div>
+<section class="card">
+  <div class="hd">{{ ic.i('database') }}<h2>Saved backups</h2><span class="sub">last {{ backups|length }}</span></div>
+  <div class="bd">
+    <table>
+      <thead><tr><th>Time</th><th>Device</th><th>Size</th><th>Triggered by</th><th>File</th><th></th></tr></thead>
+      <tbody>
+      {% for b in backups %}
+        <tr><td class="mono">{{ b.ts.strftime('%d %b %H:%M:%S') }}</td>
+            <td><b>{{ b.device }}</b></td><td class="mono">{{ '{:,}'.format(b.size_bytes) }} B</td>
+            <td class="muted">{{ b.triggered_by }}</td>
+            <td class="mono muted">{{ (b.filename or '').split('/')[-1] }}</td>
+            <td style="text-align:right"><a class="btn" href="{{ url_for('view_backup', backup_id=b.id) }}">{{ ic.i('eye', 15) }} View</a></td></tr>
+      {% else %}<tr><td colspan="6" class="empty">No backups yet</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

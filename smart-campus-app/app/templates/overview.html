@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% import "_icons.html" as ic %}
+{% import "_parts.html" as parts with context %}
+{% block title %}Overview · Smart Campus NOC{% endblock %}
+{% block pagestyles %}
+  .side-stack { display:grid; gap:20px; align-content:start; min-width:0; }
+  .more { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; }
+  .more .ico { transform:rotate(180deg); }
+{% endblock %}
+{% block content %}
+<div class="pagehd"><div><h1>Network overview</h1><p>Live state of the campus, its internet links and gateways</p></div></div>
+{{ parts.kpis() }}
+<section class="row2 wide">
+  {{ parts.topology() }}
+  <div class="side-stack">
+    <div class="card">
+      <div class="hd">{{ ic.i('globe') }}<h2>Internet links</h2>
+        <a class="sub more" href="{{ url_for('internet') }}">Failover history {{ ic.i('arrow', 14) }}</a></div>
+      <div class="bd">{{ parts.isp_cards(stack=true) }}</div>
+    </div>
+    <div class="card">
+      <div class="hd">{{ ic.i('list') }}<h2>Latest events</h2>
+        <a class="sub more" href="{{ url_for('events') }}">All events {{ ic.i('arrow', 14) }}</a></div>
+      <div class="bd">{{ parts.events_list(6) }}</div>
+    </div>
+  </div>
+</section>
+{% endblock %}

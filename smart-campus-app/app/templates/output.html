@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% block title %}{{ title }} · Smart Campus NOC{% endblock %}
+{% block styles %}
+  .result { display:flex; align-items:center; gap:16px; padding:18px 20px; flex-wrap:wrap; }
+  .result .big { width:52px; height:52px; border-radius:14px; display:grid; place-items:center; flex:none; }
+  .result.ok .big { color:var(--ok); background:color-mix(in srgb, var(--ok) 15%, transparent); }
+  .result.bad .big { color:var(--bad); background:color-mix(in srgb, var(--bad) 15%, transparent); }
+  .result.warn .big { color:var(--warn); background:color-mix(in srgb, var(--warn) 15%, transparent); }
+  .result h1 { margin:0; font-size:19px; font-weight:800; }
+  .result .when { color:var(--muted); font-size:12.5px; }
+  .result .acts { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
+  .stats { display:grid; gap:12px; grid-template-columns:repeat(4, minmax(0,1fr)); padding:0 20px 18px; }
+  .stat { border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:var(--card2); }
+  .stat .k { color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; }
+  .stat .v { font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .stat .v small { font-size:13px; color:var(--muted); font-weight:600; }
+  .stat .s { font-size:12px; color:var(--muted); font-family:"JetBrains Mono", monospace; }
+  .stat.bad .v { color:var(--bad); } .stat.warn .v { color:var(--warn); } .stat.ok .v { color:var(--ok); }
+  @media (max-width: 760px) { .stats { grid-template-columns:repeat(2, minmax(0,1fr)); } .result .acts { margin-left:0; } }
+{% endblock %}
+{% block content %}
+{% set lossy = stats and stats.loss > 0 and stats.received > 0 %}
+{% set tone = 'bad' if not ok else ('warn' if lossy else 'ok') %}
+<div class="card">
+  <div class="result {{ tone }}">
+    <div class="big">{{ ic.i('check' if tone == 'ok' else ('alert' if tone == 'warn' else 'x'), 26) }}</div>
+    <div>
+      <h1>{{ title }}</h1>
+      <div class="when">
+        <span class="pill {{ tone }}">{{ 'SUCCESS' if tone == 'ok' else ('PARTIAL LOSS' if tone == 'warn' else 'FAILED') }}</span>
+        {% if stats %}&nbsp; {{ stats.received }}/{{ stats.sent }} replies{% if stats.avg is defined %} · avg {{ '%.0f'|format(stats.avg) }} ms{% endif %}{% endif %}
+        {% if ran_at %}&nbsp;· {{ ran_at.strftime('%H:%M:%S') }}{% endif %}
+      </div>
+    </div>
+    <div class="acts">
+      <a class="btn" href="{{ back or url_for('dashboard') }}">{{ ic.i('arrow', 15) }} Back</a>
+      {% if retry and device %}
+      <form method="post" action="{{ retry }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" value="{{ device.name }}">
+        <input type="hidden" name="back" value="{{ back }}">
+        <button class="btn primary" type="submit" id="retry">{{ ic.i('activity', 15) }} Retry ping</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% if stats %}
+  <div class="stats">
+    <div class="stat"><div class="k">Sent</div><div class="v">{{ stats.sent }} <small>packets</small></div></div>
+    <div class="stat {{ 'ok' if stats.received == stats.sent else ('bad' if stats.received == 0 else 'warn') }}"><div class="k">Received</div><div class="v">{{ stats.received }} <small>packets</small></div></div>
+    <div class="stat {{ 'ok' if stats.loss == 0 else ('bad' if stats.loss == 100 else 'warn') }}"><div class="k">Packet loss</div><div class="v">{{ '%g'|format(stats.loss) }}<small>%</small></div></div>
+    <div class="stat"><div class="k">Round trip</div>
+      {% if stats.avg is defined %}<div class="v">{{ '%.0f'|format(stats.avg) }} <small>ms avg</small></div>
+        <div class="s">min {{ '%.0f'|format(stats.min) }} · max {{ '%.0f'|format(stats.max) }}</div>
+      {% else %}<div class="v">—</div><div class="s">no replies</div>{% endif %}</div>
+  </div>
+  {% endif %}
+</div>
+<div class="card">
+  <div class="hd">{{ ic.i('list') }}<h2>{{ 'Raw output' if stats else 'Output' }}</h2></div>
+  <div class="bd"><pre>{{ output }}</pre></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  var r = document.getElementById('retry');
+  if (r) r.form.addEventListener('submit', function () { r.disabled = true; r.lastChild.textContent = ' Pinging…'; });
+</script>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "layout.html" %}
+{% import "_icons.html" as ic %}
+{% import "_parts.html" as parts with context %}
+{% import "_ifaces.html" as ifp with context %}  {# with context: the forms need csrf #}
+{% block title %}Devices · Smart Campus NOC{% endblock %}
+{% block content %}
+<div class="pagehd"><div><h1>Devices</h1><p>Ping, back up and manage every node in the campus</p></div>
+  <div class="right"><span class="pill ok">{{ up }} UP</span>{% if down %}<span class="pill bad">{{ down }} DOWN</span>{% endif %}
+    {% set unk = devices|length - up - down %}{% if unk %}<span class="pill muted">{{ unk }} UNKNOWN</span>{% endif %}</div></div>
+<section class="card">
+  <div class="hd">{{ ic.i('radar') }}<h2>All devices</h2><span class="sub">Checked every 10 s · DOWN after 2 failed checks</span></div>
+  <div class="bd">{{ parts.devices_table() }}</div>
+</section>
+
+{% for name, c in cores.items() %}
+<dialog class="ifdlg" id="if-{{ name }}" aria-label="{{ name }} interfaces">
+  {{ ifp.panel(dev_cfg[name], c, if_result if if_result and if_result.core == name else None) }}
+</dialog>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  // Interface dialogs: open instantly (data is already in the page), close on X / Esc / backdrop.
+  document.querySelectorAll('[data-open]').forEach(function (b) {
+    b.addEventListener('click', function () { document.getElementById(b.dataset.open).showModal(); });
+  });
+  document.querySelectorAll('dialog.ifdlg').forEach(function (d) {
+    d.addEventListener('click', function (e) { if (e.target === d || e.target.closest('[data-close]')) d.close(); });
+    d.querySelectorAll('form.ifact').forEach(function (f) {
+      var b = f.querySelector('button'), t = b.querySelector('span'), timer;
+      f.addEventListener('submit', function (e) {
+        if (!b.classList.contains('armed')) {           // first click arms, second click applies
+          e.preventDefault();
+          b.classList.add('armed'); t.textContent = 'Confirm ' + b.dataset.label.toLowerCase() + '?';
+          clearTimeout(timer);
+          timer = setTimeout(function () { b.classList.remove('armed'); t.textContent = b.dataset.label; }, 4000);
+          return;
+        }
+        d.querySelector('.dlg-busy').hidden = false;
+      });
+    });
+  });
+  // Coming back with the browser Back button must not show a stuck "Applying" overlay.
+  window.addEventListener('pageshow', function () {
+    document.querySelectorAll('.dlg-busy').forEach(function (o) { o.hidden = true; });
+  });
+  var want = new URLSearchParams(location.search).get('open');
+  if (want && document.getElementById('if-' + want)) {
+    document.getElementById('if-' + want).showModal();
+    history.replaceState(null, '', location.pathname);  // a later refresh does not reopen it
+  }
+</script>
+{% endblock %}

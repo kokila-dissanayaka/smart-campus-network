@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% block title %}Sign in · Smart Campus NOC{% endblock %}
+{% block styles %}
+  .auth { max-width:400px; width:100%; margin:8vh auto 0; }
+  .auth .bd { display:grid; gap:14px; padding:22px; }
+  .auth h1 { margin:0; font-size:20px; font-weight:800; }
+  .auth label { display:grid; gap:6px; font-size:12.5px; font-weight:600; color:var(--muted); }
+  .auth input { width:100%; padding:10px 12px; }
+  .auth .btn { justify-content:center; padding:10px; font-size:14px; }
+  .auth .lockico { width:48px; height:48px; border-radius:14px; display:grid; place-items:center; color:#fff;
+                   background:linear-gradient(135deg, var(--accent), var(--accent2)); }
+{% endblock %}
+{% block content %}
+<div class="card auth">
+  <form class="bd" method="post">
+    <div class="lockico">{{ ic.i('lock', 24) }}</div>
+    <div><h1>Administrator sign in</h1><div class="muted">Smart Campus network control centre</div></div>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="username">Username<input id="username" name="username" autocomplete="username" required autofocus></label>
+    <label for="password">Password<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary" type="submit">{{ ic.i('lock', 16) }} Sign in</button>
+    <div class="muted" style="font-size:12px; display:flex; gap:6px; align-items:center">{{ ic.i('info', 14) }} Authorised access only. Every action is recorded in the audit log.</div>
+  </form>
+</div>
+{% endblock %}

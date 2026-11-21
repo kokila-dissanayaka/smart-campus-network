@@ -1,0 +1,55 @@
+services:
+  campus-db:
+    image: mysql:8.0
+    container_name: campus-db
+    restart: unless-stopped
+    command:
+      - --innodb-buffer-pool-size=64M
+      - --performance-schema=OFF
+    environment:
+      MYSQL_DATABASE: "campus"
+      MYSQL_USER: "campus"
+      MYSQL_PASSWORD: "${DB_PASSWORD}"
+      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD}"
+      TZ: "Asia/Colombo"
+    volumes:
+      - campus_db:/var/lib/mysql
+      - /etc/localtime:/etc/localtime:ro
+
+  # Part 6: background automation (fault detection, ISP failover, backups, alerts)
+  campus-worker:
+    build: .
+    image: smart-campus-app:1.0
+    container_name: campus-worker
+    restart: unless-stopped
+    command: ["python", "worker.py"]
+    env_file: .env
+    environment:
+      TZ: "Asia/Colombo"
+    depends_on:
+      - campus-db
+    volumes:
+      - backups:/data/backups
+      - /etc/localtime:/etc/localtime:ro
+
+  # Part 7: Flask control dashboard
+  campus-web:
+    build: .
+    image: smart-campus-app:1.0
+    container_name: campus-web
+    restart: unless-stopped
+    command: ["gunicorn", "-w", "2", "--threads", "4", "-b", "0.0.0.0:5000", "--timeout", "600", "--access-logfile", "-", "web:app"]
+    env_file: .env
+    environment:
+      TZ: "Asia/Colombo"
+    depends_on:
+      - campus-db
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - backups:/data/backups
+      - /etc/localtime:/etc/localtime:ro
+
+volumes:
+  campus_db:
+  backups:

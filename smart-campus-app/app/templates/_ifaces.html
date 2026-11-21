@@ -1,0 +1,70 @@
+{# Interface panel for one core router; shown inside a <dialog> on the Devices page. #}
+{% import "_icons.html" as ic %}
+{% macro panel(device, c, result=None) %}
+{% set ifaces, read_at, age, stale = c.ifaces, c.read_at, c.age, c.stale %}
+<div class="dlg-hd">
+  <span class="dlg-ic">{{ ic.i('router', 20) }}</span>
+  <div><h2>{{ device.name }} interfaces</h2>
+    <p>{{ device.role }} · <span class="mono">{{ device.ip }}</span>{% if read_at %} · router read at {{ read_at.strftime('%H:%M:%S') }} ({{ age }} s ago){% endif %}</p></div>
+  <button class="iconbtn dlg-x" type="button" aria-label="Close" data-close>{{ ic.i('x') }}</button>
+</div>
+<div class="dlg-bd">
+{% if result %}
+  <div class="flash {{ 'ok' if result.ok else 'error' }}">{{ ic.i('check' if result.ok else 'alert') }} {{ result.msg }}</div>
+{% endif %}
+{% if not ifaces %}
+<div class="flash error">{{ ic.i('alert') }} No reading from {{ device.name }} yet. campus-worker reads both cores every ~20 s; if this stays empty, the router is not reachable over SSH.</div>
+{% else %}
+{% if stale %}<div class="flash error">{{ ic.i('alert') }} Last reading is {{ age }} s old: {{ device.name }} is not answering SSH right now, so this may be out of date.</div>{% endif %}
+{% set real = ifaces | rejectattr('vrrp_virtual') | rejectattr('name', 'equalto', 'lo') | list %}
+<div class="sum">
+  <span class="pill ok">{{ real | selectattr('state', 'equalto', 'UP') | list | length }} UP</span>
+  {% set nd = real | selectattr('state', 'equalto', 'DISABLED') | list | length %}{% if nd %}<span class="pill bad">{{ nd }} DISABLED</span>{% endif %}
+  {% set nl = real | selectattr('state', 'equalto', 'LINK DOWN') | list | length %}{% if nl %}<span class="pill warn">{{ nl }} LINK DOWN</span>{% endif %}
+  <span class="pill muted">{{ real | rejectattr('used') | list | length }} NOT USED</span>
+  {% for r in ifaces if r.vrrp %}
+    <span class="pill {{ 'ok' if r.vrrp.state == 'MASTER' else ('bad' if r.vrrp.state == 'FAULT' else 'muted') }}" title="VRRP group on {{ r.name }}">{{ r.vrrp.group }} · {{ r.vrrp.state }}</span>
+  {% endfor %}
+</div>
+
+<div class="iftable">
+    <table>
+      <thead><tr><th>Interface</th><th>Purpose</th><th>IP address</th><th>Status</th><th>Usage</th><th>VRRP</th><th style="text-align:right">Control</th></tr></thead>
+      <tbody>
+      {% for r in ifaces %}
+        {% set child = '.' in r.name and not r.vrrp_virtual %}
+        <tr class="{{ 'spare' if not r.used }} {{ 'off' if r.state == 'DISABLED' }}">
+          <td><span class="ifname {{ 'child' if child }} {{ 'virt' if r.vrrp_virtual }}">{{ r.name }}</span></td>
+          <td class="muted" style="min-width:200px">{{ r.role or '—' }}</td>
+          <td><div class="ips">{% for a in r.ips %}<span>{{ a }}</span>{% else %}<span class="muted">—</span>{% endfor %}</div></td>
+          <td><span class="pill {{ 'ok' if r.state == 'UP' else ('bad' if r.state == 'DISABLED' else ('warn' if r.state == 'LINK DOWN' else 'muted')) }}">{{ r.state }}</span></td>
+          <td>{% if r.used %}<span class="usage on"><i></i>In use</span>{% else %}<span class="usage off"><i></i>Not used</span>{% endif %}</td>
+          <td>{% if r.vrrp %}<span class="pill {{ 'ok' if r.vrrp.state == 'MASTER' else ('bad' if r.vrrp.state == 'FAULT' else 'muted') }}">{{ r.vrrp.state }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td style="text-align:right">
+            {% if r.managed %}
+              {% set en = r.state == 'DISABLED' %}
+              <form method="post" action="{{ url_for('action_interface') }}" class="ifact">
+                <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" value="{{ device.name }}">
+                <input type="hidden" name="iface" value="{{ r.name }}"><input type="hidden" name="op" value="{{ 'enable' if en else 'disable' }}">
+                <button class="btn {{ 'en' if en else 'danger' }}" type="submit" data-label="{{ 'Enable' if en else 'Disable' }}">{{ ic.i('plug', 15) }} <span>{{ 'Enable' if en else 'Disable' }}</span></button>
+              </form>
+            {% elif r.vrrp_virtual or r.name == 'lo' or not r.used %}<span class="muted">—</span>
+            {% else %}<span class="prot" title="Uplink / management / OSPF link: changing it from the dashboard could cut the router off">{{ ic.i('lock', 14) }} Protected</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+</div>
+{% endif %}
+<div class="note">{{ ic.i('info') }}<div>
+  <b>In use</b> = has an IP address, carries VLAN sub-interfaces, or runs VRRP. <b>Not used</b> = spare port.
+  Disabling a VLAN gateway (e.g. <span class="mono">eth1.10</span>) on the VRRP master moves that group to the other core in about 3 s.
+  Changes are committed, saved and written to the audit log. <span class="mono">eth0</span> and <span class="mono">eth3</span> are protected.
+</div></div>
+{% if result and result.out %}
+<details class="raw"><summary>Router output of the last change</summary><pre>{{ result.out }}</pre></details>
+{% endif %}
+</div>
+<div class="dlg-busy" hidden><span class="spin"></span><b>Applying on {{ device.name }}…</b><span class="muted">commit + save, then re-reading the router (about 10–20 s)</span></div>
+{% endmacro %}

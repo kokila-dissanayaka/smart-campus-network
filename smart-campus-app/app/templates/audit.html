@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{% import "_icons.html" as ic %}
+{% block title %}Audit log · Smart Campus NOC{% endblock %}
+{% block content %}
+<div class="pagehd"><div><h1>Audit log</h1><p>Who did what from this dashboard</p></div></div>
+<section class="card">
+  <div class="hd">{{ ic.i('lock') }}<h2>Administrator actions</h2><span class="sub">last {{ audit|length }}</span></div>
+  <div class="bd">
+    <table>
+      <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Target</th><th>Result</th></tr></thead>
+      <tbody>
+      {% for a in audit %}
+        {% set bad = 'fail' in (a.result or '') %}
+        <tr><td class="mono">{{ a.ts.strftime('%d %b %H:%M:%S') }}</td>
+            <td><span class="devname" style="font-weight:600">{{ ic.i('user', 15) }} {{ a.username }}</span></td>
+            <td><span class="pill {{ 'bad' if bad else 'muted' }}">{{ a.action }}</span></td>
+            <td>{{ a.target }}</td><td class="mono muted">{{ a.result }}</td></tr>
+      {% else %}<tr><td colspan="5" class="empty">No actions yet</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

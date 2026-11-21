@@ -1,0 +1,268 @@
+{# Reusable dashboard sections. Import with context: {% import "_parts.html" as parts with context %} #}
+{% import "_icons.html" as ic %}
+{% set active = isp.active_isp if isp else 'UNKNOWN' %}
+{% set open_failover = failovers | selectattr('ended_at', 'none') | list %}
+{% set total = devices|length %}
+
+{% macro kpis() %}
+<section class="kpis">
+  <div class="card kpi" style="--tone:{{ 'var(--ok)' if down == 0 else 'var(--bad)' }}">
+    <div class="badge">{{ ic.i('activity', 22) }}</div>
+    <div class="txt"><div class="k">Devices online</div>
+      <div class="v">{{ up }}<span class="muted" style="font-size:16px"> / {{ total }}</span></div>
+      <div class="bar"><i style="width:{{ (100 * up / total) if total else 0 }}%"></i></div></div>
+  </div>
+  <div class="card kpi" style="--tone:{{ 'var(--ok)' if active == 'ISP-1' else ('var(--warn)' if active == 'ISP-2' else 'var(--bad)') }}">
+    <div class="badge">{{ ic.i('globe', 22) }}</div>
+    <div class="txt"><div class="k">Active internet link</div>
+      <div class="v">{{ active }}</div>
+      <div class="s">{{ 'Primary link in use' if active == 'ISP-1' else ('Running on backup link' if active == 'ISP-2' else 'No gateway reading') }}</div></div>
+  </div>
+  <div class="card kpi" style="--tone:{{ 'var(--accent)' if active_core == 'Core-1' else ('var(--warn)' if active_core else 'var(--idle)') }}">
+    <div class="badge">{{ ic.i('router', 22) }}</div>
+    <div class="txt"><div class="k">Active core (VRRP)</div>
+      <div class="v">{{ active_core or '—' }}</div>
+      <div class="s">{{ 'Primary gateway in use' if active_core == 'Core-1' else ('Backup core is gateway' if active_core == 'Core-2' else ('Groups split across cores' if active_core == 'SPLIT' else 'Waiting for VRRP reading')) }}</div></div>
+  </div>
+  <div class="card kpi" style="--tone:{{ 'var(--warn)' if open_failover else 'var(--accent)' }}">
+    <div class="badge">{{ ic.i('shuffle', 22) }}</div>
+    <div class="txt"><div class="k">Failover</div>
+      <div class="v">{{ 'Active' if open_failover else 'Normal' }}</div>
+      <div class="s">{{ failovers|length }} recorded event{{ '' if failovers|length == 1 else 's' }}</div></div>
+  </div>
+  <div class="card kpi" style="--tone:var(--accent2)">
+    <div class="badge">{{ ic.i('database', 22) }}</div>
+    <div class="txt"><div class="k">Last config backup</div>
+      <div class="v" style="font-size:17px">{{ backups[0].ts.strftime('%H:%M:%S') if backups else '—' }}</div>
+      <div class="s">{{ (backups[0].device ~ ' · ' ~ backups[0].ts.strftime('%d %b')) if backups else 'No backups yet' }}</div></div>
+  </div>
+</section>
+{% endmacro %}
+
+{% macro topology() %}
+  <div class="card">
+    <div class="hd">{{ ic.i('network') }}<h2>Live topology</h2><span class="sub">Colour = reachability from Azure monitor</span></div>
+    <div class="bd">
+      {% macro node(name, x, y, icon, side=0) -%}
+        {% set d = dev.get(name) %}
+        {% set st = d.status if d else 'UNKNOWN' %}
+        <g class="node {{ st }}">
+          {% if st == 'DOWN' %}<circle class="halo" cx="{{ x }}" cy="{{ y }}" r="24"/>{% endif %}
+          <circle class="ring" cx="{{ x }}" cy="{{ y }}" r="24"/>
+          {{ ic.raw(icon, x - 11, y - 11, 22) }}
+          {% if side %}
+          <text x="{{ x + 34 }}" y="{{ y - 1 }}" style="text-anchor:start">{{ name }}</text>
+          <text class="rtt" x="{{ x + 34 }}" y="{{ y + 13 }}" style="text-anchor:start">
+          {%- else %}
+          <text x="{{ x }}" y="{{ y + 42 }}">{{ name }}</text>
+          <text class="rtt" x="{{ x }}" y="{{ y + 56 }}">
+          {%- endif %}{{ ('%.0f ms'|format(d.rtt_ms)) if d and d.rtt_ms is not none else st }}</text>
+          <title>{{ name }} · {{ st }}</title>
+        </g>
+      {%- endmacro %}
+      {% set inet_ok = active in ('ISP-1', 'ISP-2') %}
+      {% set masters = vrrp | selectattr('master') | map(attribute='master') | list %}
+      {% macro sw(name, x, y, side) -%}
+        {% set c = switches[name] %}
+        {% set sts = [] %}{% for n in c.behind if dev.get(n) %}{% set _ = sts.append(dev[n].status) %}{% endfor %}
+        {% set st = 'UP' if 'UP' in sts else ('DOWN' if sts and sts|select('equalto', 'DOWN')|list|length == sts|length else 'UNKNOWN') %}
+        <g class="sw {{ st }}">
+          <title>{{ name }} · {{ c.role }}&#10;Not polled (GNS3 switch has no SNMP) · state inferred: {{ st }}&#10;{% for i in range(c.size) %}p{{ i }}: {{ c.ports.get(i, 'not used') }}&#10;{% endfor %}</title>
+          <rect class="box" x="{{ x - 48 }}" y="{{ y - 15 }}" width="96" height="30" rx="7"/>
+          {% for i in range(c.size) %}
+            <rect class="port {{ 'used' if i in c.ports else 'free' }}" x="{{ x - 43 + i * 11 }}" y="{{ y - 4 }}" width="8" height="8" rx="1.5"/>
+          {% endfor %}
+          <text class="swn" x="{{ x + side * 58 }}" y="{{ y - 1 }}" style="text-anchor:{{ 'start' if side > 0 else 'end' }}">{{ name }}</text>
+          <text class="rtt" x="{{ x + side * 58 }}" y="{{ y + 12 }}" style="text-anchor:{{ 'start' if side > 0 else 'end' }}">{{ c.ports|length }}/{{ c.size }} used</text>
+        </g>
+      {%- endmacro %}
+      {% macro pl(t, x, y) %}<text class="pnum" x="{{ x }}" y="{{ y }}">{{ t }}</text>{% endmacro %}
+      <svg class="topo" viewBox="0 -18 760 712" role="img" aria-label="Campus network topology with live status">
+        <text class="tag" x="40" y="52" text-anchor="start">INTERNET</text>
+        <path class="lnk {{ 'active' if active == 'ISP-1' else 'standby' }}" d="M338 66 L250 144"/>
+        <path class="lnk {{ 'active' if active == 'ISP-2' else 'standby' }}" d="M422 66 L510 144"/>
+        <g class="cloud {{ 'ok' if inet_ok else 'bad' }}">
+          <path d="M322 74 h116 a24 24 0 0 0 0 -48 a 34 34 0 0 0 -62 -12 a 26 26 0 0 0 -46 16 a 22 22 0 0 0 -8 44 z"/>
+          <text x="380" y="56">Internet</text>
+          <title>Internet · {{ ('reachable via ' ~ active) if inet_ok else 'no active ISP' }}</title>
+        </g>
+        <g transform="translate(0 90)">
+        <text class="tag" x="40" y="58" text-anchor="start">ISP</text>
+        <text class="tag" x="40" y="154" text-anchor="start">EDGE</text>
+        <text class="tag" x="40" y="254" text-anchor="start">TRANSIT</text>
+        <text class="tag" x="40" y="349" text-anchor="start">CORE</text>
+        <text class="tag" x="40" y="444" text-anchor="start">SWITCHING</text>
+        <text class="tag" x="40" y="539" text-anchor="start">HOSTS</text>
+        {# ---- links ---- #}
+        <path class="lnk {{ 'active' if active == 'ISP-1' else 'standby' }}" d="M250 54 L380 150"/>
+        <path class="lnk {{ 'active' if active == 'ISP-2' else 'standby' }}" d="M510 54 L380 150"/>
+        {# A core that is VRRP master for any network forwards that traffic up to pfSense itself #}
+        <path class="lnk {{ 'gw' if masters }}" d="M380 174 L380 235"><title>pfSense LAN em1 → SW-T p0</title></path>
+        <path class="lnk {{ 'gw' if 'Core-1' in masters }}" d="M352 265 L266 327"><title>SW-T p1 → Core-1 eth0 (uplink)</title></path>
+        <path class="lnk {{ 'gw' if 'Core-2' in masters }}" d="M408 265 L494 327"><title>SW-T p2 → Core-2 eth0 (uplink)</title></path>
+        {{ pl('p1', 328, 286) }}{{ pl('p2', 432, 286) }}{{ pl('p0', 390, 230) }}
+        {# When groups are split, return traffic arrives at the TRANSIT master and crosses the core link (OSPF) #}
+        <path class="lnk ospf {{ 'gw split' if active_core == 'SPLIT' }}" d="M274 345 L486 345"><title>Core-1 eth3 ↔ Core-2 eth3 (OSPF){{ ' · carrying return traffic between the cores' if active_core == 'SPLIT' }}</title></path>
+        <text class="tag" x="380" y="337">OSPF · VRRP</text>
+        {# trunks core -> access switches #}
+        {% set s1 = [vrrp_vlan.get('10'), vrrp_vlan.get('20')] %}{% set s2 = [vrrp_vlan.get('30'), vrrp_vlan.get('99')] %}
+        <path class="lnk thin {{ 'gw' if 'Core-1' in s1 }}" d="M245 369 L210 425"><title>Core-1 eth1 → SW-1 p0 · 802.1Q trunk VLAN 10,20</title></path>
+        <path class="lnk thin {{ 'gw' if 'Core-2' in s1 }}" d="M495 365 L232 425"><title>Core-2 eth1 → SW-1 p1 · 802.1Q trunk VLAN 10,20</title></path>
+        <path class="lnk thin {{ 'gw' if 'Core-1' in s2 }}" d="M265 365 L528 425"><title>Core-1 eth2 → SW-2 p0 · 802.1Q trunk VLAN 30,99</title></path>
+        <path class="lnk thin {{ 'gw' if 'Core-2' in s2 }}" d="M515 369 L550 425"><title>Core-2 eth2 → SW-2 p1 · 802.1Q trunk VLAN 30,99</title></path>
+        {{ pl('p0', 194, 420) }}{{ pl('p1', 250, 420) }}{{ pl('p0', 510, 420) }}{{ pl('p1', 566, 420) }}
+        {# access ports #}
+        {% for x1, hx, vl, pn, lx in [(200, 130, '10', 'p2', 176), (230, 300, '20', 'p3', 256), (530, 460, '30', 'p2', 506), (560, 630, '99', 'p3', 586)] %}
+          <path class="lnk thin {{ 'gw' if vrrp_vlan.get(vl) }}" d="M{{ x1 }} 455 L{{ hx }} 511"><title>{{ pn }} · access VLAN {{ vl }}</title></path>
+          {{ pl(pn, lx, 476) }}
+        {% endfor %}
+        {# ---- nodes ---- #}
+        {{ node('ISP-1', 250, 54, 'globe') }}
+        {{ node('ISP-2', 510, 54, 'globe') }}
+        {{ node('pfSense', 380, 150, 'shield', 1) }}
+        {{ sw('SW-T', 380, 250, 1) }}
+        {{ node('Core-1', 250, 345, 'router') }}
+        {{ node('Core-2', 510, 345, 'router') }}
+        {% if vrrp %}
+        {% for core, bx in [('Core-1', 140), ('Core-2', 620)] %}
+          {% set mine = vrrp | selectattr('master', 'equalto', core) | map(attribute='name') | list %}
+          {% set on = mine|length > 0 %}
+          <g class="role {{ 'on' if on else 'off' }}">
+            <rect x="{{ bx - 38 }}" y="337" width="76" height="18" rx="9"/>
+            <text x="{{ bx }}" y="349.5">{{ 'ACTIVE' if on else 'STANDBY' }}</text>
+            {% if on and active_core == 'SPLIT' %}
+            <text class="rtt" x="{{ bx }}" y="369">{{ mine|join(' · ') if mine|length <= 2 else (mine|length ~ ' groups') }}</text>
+            {% endif %}
+          </g>
+        {% endfor %}
+        {% endif %}
+        {{ sw('SW-1', 215, 440, -1) }}
+        {{ sw('SW-2', 545, 440, 1) }}
+        {{ node('Admin-PC', 130, 535, 'monitor') }}
+        {{ node('Student-PC', 300, 535, 'monitor') }}
+        {{ node('Server', 460, 535, 'server') }}
+        {{ node('Mgmt-PC', 630, 535, 'monitor') }}
+        </g>
+      </svg>
+      <div class="legend">
+        <span><i style="border-color:var(--ok); border-top-style:dashed"></i>Active ISP path</span>
+        <span><i style="border-color:var(--line); border-top-style:dotted"></i>Standby ISP</span>
+        <span><i style="border-color:var(--accent); border-top-style:dashed"></i>Active gateway path (VRRP master)</span>
+        <span><i style="border-color:var(--line); border-top-style:dashed"></i>Core interconnect</span>
+        {% if active_core == 'SPLIT' %}<span><i style="border-color:var(--warn); border-top-style:dashed"></i>Return traffic between cores (split VRRP)</span>{% endif %}
+        <span><b class="lg-port used"></b>Used port <b class="lg-port free"></b>Free port · switches are not polled (no SNMP), state is inferred from devices behind them</span>
+      </div>
+      <div class="gws">
+        {% for g in vrrp %}
+          <span class="gw {{ 'none' if not g.master }}" title="VRRP group {{ g.name }} on {{ g.iface }}">
+            {{ ic.i('router', 14) }} <b>{{ g.name }}</b> → <span class="c">{{ g.master or 'no master' }}</span></span>
+        {% else %}
+          <span class="muted" style="font-size:12px">Waiting for the first VRRP reading from the cores…</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro isp_cards(stack=false) %}
+      {% if isp %}
+      <div class="isp {{ 'stack' if stack }}">
+        {% for n, label, tier, s, dl, ls in [('ISP-1', 'ISP-1', 'Primary · Tier 1', isp.isp1_status, isp.isp1_delay, isp.isp1_loss),
+                                             ('ISP-2', 'ISP-2', 'Backup · Tier 2', isp.isp2_status, isp.isp2_delay, isp.isp2_loss)] %}
+        <div class="ispc {{ 'active' if active == n }}">
+          <div class="l">
+            <div class="t">{{ ic.i('globe') }} {{ label }}{% if active == n %}<span class="now">IN USE</span>{% endif %}</div>
+            <div class="tier">{{ tier }}</div>
+            <span class="pill {{ s|pill }}">{{ (s or 'unknown')|upper }}</span>
+          </div>
+          <div class="r">
+            <div class="metric"><span>Latency</span><b>{{ dl or '—' }}</b></div>
+            <div class="metric"><span>Packet loss</span><b>{{ ls or '—' }}</b></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<p class="empty">Waiting for the first gateway reading from pfSense…</p>{% endif %}
+{% endmacro %}
+
+{% macro failover_table(limit=100) %}
+      <table>
+        <thead><tr><th>Started</th><th>Path</th><th>Ended</th><th>Duration</th></tr></thead>
+        <tbody>
+        {% for f in failovers[:limit] %}
+          <tr><td class="mono">{{ f.started_at.strftime('%d %b %H:%M:%S') }}</td>
+              <td><b>{{ f.from_isp }}</b> → <b>{{ f.to_isp }}</b></td>
+              <td>{% if f.ended_at %}<span class="mono">{{ f.ended_at.strftime('%H:%M:%S') }}</span>{% else %}<span class="pill warn">ONGOING</span>{% endif %}</td>
+              <td class="mono">{{ (f.duration_s ~ ' s') if f.duration_s is not none else '—' }}</td></tr>
+        {% else %}<tr><td colspan="4" class="empty">No failovers recorded yet</td></tr>{% endfor %}
+        </tbody>
+      </table>
+{% endmacro %}
+
+{% macro devices_table() %}
+    <table>
+      <thead><tr><th>Device</th><th>Role</th><th>Address</th><th>Status</th><th>Latency</th><th>Last change</th><th style="text-align:right">Actions</th></tr></thead>
+      <tbody>
+      {% for d in devices %}
+        <tr>
+          <td><div class="devname"><span class="ic">{{ ic.dev(d.dtype, d.name) }}</span>{{ d.name }}</div></td>
+          <td class="muted">{{ d.role }}</td>
+          <td class="mono">{{ d.ip }}</td>
+          <td><span class="pill {{ d.status|pill }}">{{ d.status }}</span></td>
+          <td class="mono">{{ ('%.1f ms'|format(d.rtt_ms)) if d.rtt_ms is not none else '—' }}</td>
+          <td class="mono muted">{{ d.last_change.strftime('%d %b %H:%M:%S') if d.last_change else '—' }}</td>
+          <td>
+            <div class="actions" style="justify-content:flex-end">
+              <form method="post" action="{{ url_for('action_ping') }}">
+                <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" value="{{ d.name }}"><input type="hidden" name="back" value="{{ request.path }}">
+                <button class="btn" type="submit" title="Send 4 ICMP echo requests">{{ ic.i('activity', 15) }} Ping</button>
+              </form>
+              {% if d.name in backup_targets %}
+              <form method="post" action="{{ url_for('action_backup') }}">
+                <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="device" value="{{ d.name }}"><input type="hidden" name="back" value="{{ request.path }}">
+                <button class="btn" type="submit" title="Save the running configuration">{{ ic.i('save', 15) }} Backup</button>
+              </form>
+              {% endif %}
+              {% if d.dtype == 'vyos' %}
+              <button class="btn" type="button" data-open="if-{{ d.name }}" title="Interface status and control">{{ ic.i('plug', 15) }} Interfaces</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+{% endmacro %}
+
+{% macro events_list(limit=100) %}
+      <ul class="tl">
+      {% for e in events[:limit] %}
+        {% set t = e.severity|pill %}
+        <li><span class="ti {{ t }}">{{ ic.i('x' if t == 'bad' else ('alert' if t == 'warn' else ('check' if e.etype in ('RECOVERY','FAILBACK','BACKUP') else 'info')), 16) }}</span>
+          <div><div class="m"><b>{{ e.device }}</b> · {{ e.message }}</div>
+               <div class="meta">{{ e.etype }} · {{ e.ts.strftime('%d %b %H:%M:%S') }}</div></div></li>
+      {% else %}<li class="empty">No events yet</li>{% endfor %}
+      </ul>
+{% endmacro %}
+
+{% macro backups_list(limit=100) %}
+      <ul class="tl">
+      {% for b in backups[:limit] %}
+        <li><span class="ti ok">{{ ic.i('save', 16) }}</span>
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center">
+            <div><div class="m"><b>{{ b.device }}</b> · <span class="mono">{{ b.size_bytes }} B</span></div>
+                 <div class="meta">{{ b.ts.strftime('%d %b %H:%M:%S') }} · {{ b.triggered_by }}</div></div>
+            <a class="btn" href="{{ url_for('view_backup', backup_id=b.id) }}">{{ ic.i('eye', 15) }} View</a></div></li>
+      {% else %}<li class="empty">No backups yet</li>{% endfor %}
+      </ul>
+{% endmacro %}
+
+{% macro audit_list(limit=100) %}
+      <ul class="tl">
+      {% for a in audit[:limit] %}
+        <li><span class="ti muted">{{ ic.i('user', 16) }}</span>
+          <div><div class="m"><b>{{ a.username }}</b> · {{ a.action }} <span class="muted">{{ a.target }}</span></div>
+               <div class="meta">{{ a.ts.strftime('%d %b %H:%M:%S') }} · {{ a.result }}</div></div></li>
+      {% else %}<li class="empty">No actions yet</li>{% endfor %}
+      </ul>
+{% endmacro %}
